@@ -1,0 +1,1 @@
+The 'reference' directory is the default destination for folders containing white balance reference photos built by this utility. 

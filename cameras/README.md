@@ -1,0 +1,1 @@
+The 'cameras' directory contains JSON files built by this utility, which assign color temperatures to RGB multipliers found in Canon DPP3 recipes.
