@@ -1,8 +1,8 @@
 <?php
 
-require_once('Dpp2Xmp.php');
+require_once('Dpp3Xmp.php');
 
-$converter = new Dpp2Xmp(500);
+$converter = new Dpp3Xmp(500);
 $converter->convertDPPtoXMP($argv[1]);
 exit;
 

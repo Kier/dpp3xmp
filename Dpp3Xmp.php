@@ -1,6 +1,6 @@
 <?php
 
-class Dpp2Xmp
+class Dpp3Xmp
 {
 	const CREATE_FILES = true;
 
@@ -162,7 +162,7 @@ class Dpp2Xmp
 
 			if ($photoExif->WhiteBalanceAdj != 'Kelvin' || $photoExif->WBAdjColorTemp != $temperature)
 			{
-				Dpp2Xmp::write("Photo {$photo->getFilename()} should be set to color temperature = {$temperature}k in DPP3, but is actually set to {$photoExif->WBAdjColorTemp}k.");
+				Dpp3Xmp::write("Photo {$photo->getFilename()} should be set to color temperature = {$temperature}k in DPP3, but is actually set to {$photoExif->WBAdjColorTemp}k.");
 				exit;
 			}
 
