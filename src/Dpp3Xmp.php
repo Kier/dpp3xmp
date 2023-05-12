@@ -192,7 +192,7 @@ class Dpp3Xmp
 		$this->write($this->progress($done, $total, sprintf("\t%' 5d.%s ", $temperature, $this->file->getExtension())), 0, '');
 	}
 
-    public function getXMP(SplFileInfo $file, &$multipliers = '', &$vrdWbAdj = '', &$whiteBalance = '', &$kelvin = '', &$exposure = ''): ?string
+    public function getXMP(SplFileInfo $file, &$WBAdjRGGBLevels = '', &$WhiteBalanceAdj = '', &$whiteBalance = '', &$kelvin = '', &$exposure = ''): ?string
     {
 		$this->file = $file;
         $this->exif = $this->getExif($file);
@@ -203,8 +203,8 @@ class Dpp3Xmp
             return null;
         }
 
-		$multipliers = $this->exif->WBAdjRGGBLevels;
-		$vrdWbAdj = $this->exif->WhiteBalanceAdj;
+		$WBAdjRGGBLevels = $this->exif->WBAdjRGGBLevels;
+		$WhiteBalanceAdj = $this->exif->WhiteBalanceAdj;
         $whiteBalance = $this->getWhiteBalance($kelvin);
 		$attributes =
 			$this->getTemperature($kelvin) .
@@ -222,7 +222,7 @@ class Dpp3Xmp
 		return '<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 7.0-c000 1.000000, 0000/00/00-00:00:00">
 	<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
 		<rdf:Description rdf:about="" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
-			WBAdjRGGBLevels="' . $multipliers . '"
+			WBAdjRGGBLevels="' . $WBAdjRGGBLevels . '"
 			crs:Version="15.3"
 			crs:ProcessVersion="11.0"
 			crs:WhiteBalance="' . $whiteBalance . '"' . $attributes . '
@@ -254,7 +254,7 @@ class Dpp3Xmp
             return null;
         }
 
-        $vrdMultipliers = $this->getMultipliersFromRGGB($this->exif->WBAdjRGGBLevels);
+        $recipeMultipliers = $this->getMultipliersFromRGGB($this->exif->WBAdjRGGBLevels);
 
         $minDiff = PHP_FLOAT_MAX;
         $closestKelvin = null;
@@ -265,7 +265,7 @@ class Dpp3Xmp
 
             for ($i = 0; $i <= 2; $i++)
             {
-                $rgb += pow($vrdMultipliers[$i] - $refMultipliers[$i], 2);
+                $rgb += pow($recipeMultipliers[$i] - $refMultipliers[$i], 2);
             }
 
             $diff = sqrt($rgb);
@@ -275,6 +275,8 @@ class Dpp3Xmp
                 $minDiff = $diff;
                 $closestKelvin = $kelvin;
             }
+
+			// TODO: abandon if we start to get a bigger difference, indicating that we are getting further away?
         }
 
         return $closestKelvin + 0;
