@@ -74,7 +74,7 @@ class Dpp3Xmp
 				continue;
 			}
 
-			$this->write(number_format($k) . ' K / ' . $wb . ($exp ? "; {$exp}ev" : ''), 1, '');
+			$this->write(($k ? number_format($k) . ' K' : ' (Auto)') . ' / ' . $wb . ($exp ? "; {$exp}ev" : ''), 1, '');
 
 			$fp = fopen($file->getPathInfo() . '/' . $file->getBasename('.' . $file->getExtension()) . '.xmp', 'w');
 			fwrite($fp, $xmp);
@@ -123,19 +123,22 @@ class Dpp3Xmp
 
 		$this->write("Generating reference photos...");
 
+		$tempFile = sys_get_temp_dir() . '/' . $this->getCameraId($exif) . '.' . $file->getExtension();
+		copy($file->getPathname(), $tempFile);
+
 		for ($temperature = $this->tempMin; $temperature <= $this->tempMax; $temperature += $this->tempStep)
 		{
-			$pathname = $file->getPathname();
+			$pathname = $tempFile;
 			$newPathname = "{$folder}/{$temperature}.{$extension}";
 			if (file_exists($newPathname))
 			{
 				unlink($newPathname);
 			}
 
-			`exiftool -CanonVRD:WhiteBalanceAdj=Kelvin -CanonVRD:WBAdjColorTemp={$temperature} {$pathname}`;
+			`exiftool -CanonVRD:WhiteBalanceAdj=Kelvin -CanonVRD:WBAdjColorTemp={$temperature} {$tempFile}`;
 
-			rename($pathname, $newPathname);
-			rename("{$pathname}_original", $pathname);
+			rename($tempFile, $newPathname);
+			rename("{$tempFile}_original", $tempFile);
 
 			$this->writeTemperatureProgress($temperature);
 		}
@@ -215,7 +218,8 @@ class Dpp3Xmp
 			$this->getExposure($exposure) .
 			$this->getContrast($contrast) .
 			$this->getSaturation($saturation) .
-			$this->getSharpness($sharpness);
+			$this->getSharpness($sharpness) .
+			$this->getCrop($cropped);
 
 		if (!$kelvin && !$exposure)
 		{
@@ -230,7 +234,7 @@ class Dpp3Xmp
 			crs:Version="15.3"
 			crs:ProcessVersion="11.0"
 			crs:WhiteBalance="' . $whiteBalance . '"' . $attributes . '
-			crs:LensProfileEnable="1"
+			crs:LensProfileEnable="' . ($cropped ? 0 : 1) . '"
 			crs:ToneCurveName2012="Linear"
 			crs:HasSettings="True"
 			crs:AlreadyApplied="False">
@@ -242,7 +246,7 @@ class Dpp3Xmp
 
     public function getExif(SplFileInfo $file)
     {
-        $json = `exiftool -j -SerialNumber -OwnerName -CanonModelID -CanonVRD:all "{$file->getPathName()}"`;
+        $json = `exiftool -j -SerialNumber -OwnerName -ExifImageHeight -ExifImageWidth -CanonModelID -CanonVRD:all "{$file->getPathName()}"`;
         return json_decode($json)[0];
     }
 
@@ -517,6 +521,30 @@ class Dpp3Xmp
 
         return '';
     }
+
+	protected function getCrop(&$cropped = null): string
+	{
+		if (isset($this->exif->CropActive) && $this->exif->CropActive === 'Yes')
+		{
+			if ($this->exif->AngleAdj !== 0)
+			{
+				// can't handle rotated crops yet
+				return '';
+			}
+
+			$cropped = true;
+
+			return
+				$this->getAttribute('crs:HasCrop', 'True') .
+				$this->getAttribute('crs:CropTop', $this->exif->CropTop / $this->exif->ExifImageHeight) .
+				$this->getAttribute('crs:CropLeft', $this->exif->CropLeft / $this->exif->ExifImageWidth) .
+				$this->getAttribute('crs:CropBottom',  ($this->exif->CropTop + $this->exif->CropHeight) / $this->exif->ExifImageHeight) .
+				$this->getAttribute('crs:CropRight', ($this->exif->CropLeft + $this->exif->CropWidth) / $this->exif->ExifImageWidth) .
+				$this->getAttribute('crs:CropAngle', $this->exif->AngleAdj * -1);
+		}
+
+		return '';
+	}
 
 	public function write($text = '', $newLines = 1, $prefix = "\t"): void
 	{
