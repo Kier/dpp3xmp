@@ -1,8 +1,9 @@
 <?php
 
-require_once('src/Dpp3Xmp.php');
+$dir = __DIR__;
+require_once($dir . '/src/Dpp3Xmp.php');
 
-$converter = new Dpp3Xmp(500);
+$converter = new Dpp3Xmp($dir, 50);
 $path = $argv[1];
 
 if (!file_exists($path))

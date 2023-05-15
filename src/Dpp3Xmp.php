@@ -4,7 +4,7 @@ class Dpp3Xmp
 {
 	const CREATE_FILES = true;
 
-	const REFERENCE_PATH = './reference/';
+	const REFERENCE_PATH = '/reference/';
 
 	const VERSION = '1.0.0 Beta';
 
@@ -18,12 +18,16 @@ class Dpp3Xmp
 
 	protected $exif;
 
+	protected $dir = null;
+
 	protected int $tempMin;
 	protected int $tempMax;
 	protected int $tempStep;
 
-    public function __construct(int $tempStep = 50, int $tempMin = 2500, int $tempMax = 10000)
+    public function __construct($dir, int $tempStep = 50, int $tempMin = 2500, int $tempMax = 10000)
     {
+		$this->dir = $dir;
+
 		$this->tempMin = $tempMin;
 		$this->tempMax = $tempMax;
 		$this->tempStep = $tempStep;
@@ -104,7 +108,7 @@ class Dpp3Xmp
 			$exif->SerialNumber
 		), 2);
 
-		$folder = self::REFERENCE_PATH . '/' . $this->getCameraId($exif);
+		$folder = $this->dir . self::REFERENCE_PATH . '/' . $this->getCameraId($exif);
 		$extension = strtoupper($file->getExtension());
 
 		if (!is_dir($folder))
@@ -171,7 +175,7 @@ class Dpp3Xmp
 			$json['data'][$temperature] = $this->getMultipliersFromRGGB($photoExif->WBAdjRGGBLevels);
 		}
 
-		$jsonFile = "./cameras/{$this->getCameraId($exif)}.json";
+		$jsonFile = "{$this->dir}/cameras/{$this->getCameraId($exif)}.json";
 		$fp = fopen($jsonFile, 'w');
 		$jsonText = preg_replace('/("\d{4,5}":\[)/', "\n\$1", json_encode($json));
 		fwrite($fp, $jsonText);
@@ -297,7 +301,7 @@ class Dpp3Xmp
 
 		if (!isset($this->cameras[$cameraId]))
 		{
-			$file = "./cameras/{$cameraId}.json";
+			$file = "{$this->dir}/cameras/{$cameraId}.json";
 
 			if (!file_exists($file))
 			{
@@ -327,7 +331,7 @@ class Dpp3Xmp
 
         if (!isset($this->cameras[$cameraId]))
         {
-            $file = "./cameras/{$cameraId}.json";
+            $file = "{$this->dir}/cameras/{$cameraId}.json";
 
             if (!file_exists($file))
             {
@@ -378,7 +382,7 @@ class Dpp3Xmp
 
     protected function getKnownCameraFiles()
     {
-        $dirIterator = new \DirectoryIterator('./cameras');
+        $dirIterator = new \DirectoryIterator("{$this->dir}/cameras");
         $iterator = new IteratorIterator($dirIterator);
 
         $files = [];
