@@ -454,10 +454,21 @@ class Dpp3Xmp
         return ($value > 0 ? '+' : '') . $value;
     }
 
-    protected function getAttribute($attribute, $value)
+    protected function getAttribute($attribute, $value): string
     {
         return "\n\t\t\t{$attribute}=\"{$value}\"";
     }
+
+	protected function getAttributes(array $attributes): string
+	{
+		$output = '';
+
+		foreach ($attributes AS $attribute => $value)
+		{
+			$output .= $this->getAttribute($attribute, $value);
+		}
+		return $output;
+	}
 
     protected function getTemperature(&$value)
     {
@@ -526,25 +537,92 @@ class Dpp3Xmp
 	{
 		if (isset($this->exif->CropActive) && $this->exif->CropActive === 'Yes')
 		{
-			if ($this->exif->AngleAdj !== 0)
-			{
-				// can't handle rotated crops yet
-				return '';
-			}
-
 			$cropped = true;
-
-			return
-				$this->getAttribute('crs:HasCrop', 'True') .
-				$this->getAttribute('crs:CropTop', $this->exif->CropTop / $this->exif->ExifImageHeight) .
-				$this->getAttribute('crs:CropLeft', $this->exif->CropLeft / $this->exif->ExifImageWidth) .
-				$this->getAttribute('crs:CropBottom',  ($this->exif->CropTop + $this->exif->CropHeight) / $this->exif->ExifImageHeight) .
-				$this->getAttribute('crs:CropRight', ($this->exif->CropLeft + $this->exif->CropWidth) / $this->exif->ExifImageWidth) .
-				$this->getAttribute('crs:CropAngle', $this->exif->AngleAdj * -1);
+			$params = $this->getCropFromExif($this->exif, $pixelValues);
+			return $this->getAttributes($params);
 		}
 
 		return '';
 	}
+
+	public function getCropFromExif($exif, &$pixelValues = []): array
+	{
+		return $this->getCropParameters(
+			$exif->AngleAdj,
+			$exif->CropLeft, $exif->CropTop,
+			$exif->CropWidth, $exif->CropHeight,
+			$exif->ExifImageWidth, $exif->ExifImageHeight,
+			$pixelValues
+		);
+	}
+
+	public function getCropParameters($angleDegrees, $dppCropX, $dppCropY, $cropWidth, $cropHeight, $imageWidth, $imageHeight, &$pixelValues = []): array
+	{
+		if ($angleDegrees)
+		{
+			/*
+			 * DPP stores its rotated crop data as though the entire image was rotated and the canvas expands
+			 * to fit the rotated image. The top/left coordinates are relative to the expanded canvas.
+			 * XMP stores rotation as the location of the top-left and bottom-right corners of a rectangle
+			 * that is rotated within the original image.
+			 * This code converts from DPP to XMP.
+			 */
+			$angle = deg2rad($angleDegrees);
+
+			// get the size of the expanded canvas used by DPP
+			$expandedWidth = $imageWidth * abs(cos($angle)) + $imageHeight * abs(sin($angle));
+			$expandedHeight = $imageWidth * abs(sin($angle)) + $imageHeight * abs(cos($angle));
+
+			// find the center of the expanded canvas
+			$centerX = 0.5 * $expandedWidth;
+			$centerY = 0.5 * $expandedHeight;
+
+			// find out how much the canvas has expanded at each edge
+			$expansionX = 0.5 * ($expandedWidth - $imageWidth);
+			$expansionY = 0.5 * ($expandedHeight - $imageHeight);
+
+			// get the position of the crop start relative to the center
+			$relativeX = $dppCropX - $centerX;
+			$relativeY = $dppCropY - $centerY;
+
+			// rotate the crop start back around the image center, then subtract the canvas expansion amounts
+			$cropLeft = $relativeX * cos(-$angle) - $relativeY * sin(-$angle) + $centerX - $expansionX;
+			$cropTop = $relativeX * sin(-$angle) + $relativeY * cos(-$angle) + $centerY - $expansionY;
+
+			// rotate a point at cropWidth, cropHeight back around the origin, then shift relative to the crop start
+			$cropRight = $cropWidth * cos(-$angle) - $cropHeight * sin(-$angle) + $cropLeft;
+			$cropBottom = $cropWidth * sin(-$angle) + $cropHeight * cos(-$angle) + $cropTop;
+		}
+		else
+		{
+			$cropTop = $dppCropY;
+			$cropLeft = $dppCropX;
+			$cropBottom = $dppCropY + $cropHeight;
+			$cropRight = $dppCropX + $cropWidth;
+		}
+
+		$pixelValues = [
+			'origin' => "$dppCropX, $dppCropY",
+			'size' => "$cropWidth x $cropHeight",
+			'top' => $cropTop,
+			'left' => $cropLeft,
+			'bottom' => $cropBottom,
+			'right' => $cropRight,
+			'width' => $cropRight - $cropLeft,
+			'height' => $cropBottom - $cropTop
+		];
+
+		// XMP wants a figure between 0-1 to represent position within the image
+		return [
+			'crs:CropTop' => $cropTop / $imageHeight,
+			'crs:CropLeft' => $cropLeft / $imageWidth,
+			'crs:CropBottom' => $cropBottom / $imageHeight,
+			'crs:CropRight' => $cropRight / $imageWidth,
+			'crs:CropAngle' => -$angleDegrees,
+			'crs:HasCrop' => 'True'
+		];
+	}
+
 
 	public function write($text = '', $newLines = 1, $prefix = "\t"): void
 	{
