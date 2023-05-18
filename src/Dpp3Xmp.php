@@ -6,6 +6,25 @@ class Dpp3Xmp
 
 	const REFERENCE_PATH = '/reference/';
 
+	/*
+	 * DPP stores highlight and shadow adjustments in a range -5 to +5
+	 * while XMP stores -100 to +100. We can therefore multiply the DPP
+	 * value by 20 to get the XMP value. However, Lightroom's shadow and
+	 * highlight process is not particularly comparable to the DPP approach,
+	 * so you may want to disable the translation. If so, set both shadow
+	 * and highlight multipliers to 0.
+	 */
+	const SHADOW_MULTIPLIER = 20;
+	const HIGHLIGHT_MULTIPLIER = 20;
+
+	/*
+	 * When applying a filter to a monochrome image, DPP does not allow
+	 * fine adjustment to the filter amount. The equivalent XMP adjustment
+	 * ranges from -100 to +100, but the effect is not identical. Choose a
+	 * value to correspond to the DPP amount here.
+	 */
+	const MONO_FILTER_STRENGTH = 50;
+
 	const VERSION = '1.0.0 Beta';
 
 	public static array $rawTypes = ['CRW', 'CR2', 'CR3'];
@@ -217,9 +236,12 @@ class Dpp3Xmp
 			$this->getTemperature($kelvin) .
 			$this->getExposure($exposure) .
 			$this->getContrast($contrast) .
+			$this->getHighlight($highlight) .
+			$this->getShadow($shadow) .
 			$this->getSaturation($saturation) .
 			$this->getSharpness($sharpness) .
-			$this->getCrop($cropped);
+			$this->getCrop($cropped) .
+			$this->getPictureStyle($crsName, $crsConvertToGrayscale);
 
 		if (!$kelvin && !$exposure)
 		{
@@ -238,6 +260,14 @@ class Dpp3Xmp
 			crs:ToneCurveName2012="Linear"
 			crs:HasSettings="True"
 			crs:AlreadyApplied="False">
+			<crs:Look>
+				<rdf:Description crs:Name="' . $crsName . '">
+					<crs:Parameters>
+						<rdf:Description crs:ConvertToGrayscale="' . $crsConvertToGrayscale . '">
+						</rdf:Description>
+					</crs:Parameters>				
+				</rdf:Description>
+			</crs:Look>
 		</rdf:Description>
 	</rdf:RDF>
 </x:xmpmeta>';
@@ -480,7 +510,7 @@ class Dpp3Xmp
         return '';
     }
 
-    protected function getExposure(&$value)
+    protected function getExposure(&$value): string
     {
         if (isset($this->exif->RawBrightnessAdj))
         {
@@ -493,7 +523,7 @@ class Dpp3Xmp
         return '';
     }
 
-    protected function getContrast(&$value = null)
+    protected function getContrast(&$value = null): string
     {
         if (isset($this->exif->CameraRawContrast))
         {
@@ -506,7 +536,68 @@ class Dpp3Xmp
         return '';
     }
 
-    protected function getSaturation(&$value = null)
+	protected function getHighlight(&$value = null): string
+	{
+		if (isset($this->exif->StandardRawHighlight) && $this->exif->StandardRawHighlight)
+		{
+			// XMP wants a value between -100 - 1000
+			$value = $this->exif->StandardRawHighlight * self::HIGHLIGHT_MULTIPLIER;
+
+			return $this->getAttribute('crs:Highlight', $value);
+		}
+
+		return '';
+	}
+
+	protected function getShadow(&$value = null): string
+	{
+		if (isset($this->exif->StandardRawShadow) && $this->exif->StandardRawShadow)
+		{
+			// XMP wants a value between -100 - 1000
+			$value = $this->exif->StandardRawShadow * self::SHADOW_MULTIPLIER;
+
+			return $this->getAttribute('crs:Shadow', $value);
+		}
+
+		return '';
+	}
+
+	protected function getPictureStyle(&$crsName = 'Adobe Color', &$crsConvertToGrayscale = 'No'): string
+	{
+		switch ($this->exif->PictureStyle)
+		{
+			case 'Monochrome':
+			{
+				$crsName = 'Adobe Monochrome';
+				$crsConvertToGrayscale = 'True';
+
+				$params = ['crs:Clarity2012' => '+8'];
+
+				switch ($this->exif->MonochromeFilterEffect)
+				{
+					case 'Yellow':
+					case 'Orange':
+					case 'Red':
+					case 'Green':
+					{
+						$params["crs:GrayMixer{$this->exif->MonochromeFilterEffect}"] = $this->addSymbol(self::MONO_FILTER_STRENGTH);
+						break;
+					}
+
+					case 'None':
+					default:
+						break;
+				}
+
+				return $this->getAttributes($params);
+			}
+
+			default:
+				return '';
+		}
+	}
+
+    protected function getSaturation(&$value = null): string
     {
         if (isset($this->exif->CameraRawSaturation))
         {
@@ -519,7 +610,7 @@ class Dpp3Xmp
         return '';
     }
 
-    protected function getSharpness(&$value = null)
+    protected function getSharpness(&$value = null): string
     {
         if (isset($this->exif->CameraRawSharpness))
         {
