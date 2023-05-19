@@ -321,18 +321,18 @@ class Dpp3Xmp
 				$name = ($color != 'RGB' ? $color : '');
 
 				$xml .= "
-				<crs:ToneCurvePV2012{$name}>
-					<rdf:Seq>";
+			<crs:ToneCurvePV2012{$name}>
+				<rdf:Seq>";
 
 				foreach ($points as $point)
 				{
 					$xml .= "
-					<rdf:li>{$point[0]}, {$point[1]}</rdf:li>";
+				<rdf:li>{$point[0]}, {$point[1]}</rdf:li>";
 				}
 
 				$xml .= "
-					</rdf:Seq>
-				</crs:ToneCurvePV2012{$name}>";
+				</rdf:Seq>
+			</crs:ToneCurvePV2012{$name}>";
 			}
 		}
 
@@ -875,6 +875,7 @@ class Dpp3Xmp
 
 	protected function getToneCurves(&$points = []): array
 	{
+		$hasEdits = false;
 		$curves = [];
 
 		if (isset($this->exif->ToneCurveActive) && $this->exif->ToneCurveActive === 'Yes')
@@ -883,18 +884,30 @@ class Dpp3Xmp
 
 			foreach (['RGB', 'Red', 'Green', 'Blue'] AS $color)
 			{
-				$curves[$color] = $this->getToneCurvePoints($color);
+				$curves[$color] = $this->getToneCurvePoints($color, $hasEdits);
 			}
 		}
 
 		$points = $curves;
 
-		return $curves;
+		return $hasEdits ? $curves : [];
 	}
 
-	protected function getToneCurvePoints($color): array
+	protected function getToneCurvePoints($color, &$hasEdits): array
 	{
+		$limitsProp = $color . 'CurveLimits';
 		$pointsProp = $color . 'CurvePoints';
+
+		$limits = explode(' ', $this->exif->$limitsProp);
+		$defaultPoints = sprintf('(%d,%d) (%d,%d)',
+			$limits[1], $limits[3],
+			$limits[0], $limits[2]
+		);
+		if ($this->exif->$pointsProp != $defaultPoints)
+		{
+			$hasEdits = true;
+		}
+
 		$points = [];
 
 		preg_match_all('/\((\d+),(\d+)\)/', $this->exif->$pointsProp, $matches, PREG_SET_ORDER);
