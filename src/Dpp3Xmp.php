@@ -236,6 +236,7 @@ class Dpp3Xmp
 		$WhiteBalanceAdj = $this->exif->WhiteBalanceAdj;
         $whiteBalance = $this->getWhiteBalance($kelvin);
 		$checkMark = $this->getCheckMark($checkMarkValue);
+		$toneCurvesXml = $this->getToneCurves($toneCurvePoints);
 		$attributes =
 			$this->getRating($rating) .
 			$this->getTemperature($kelvin) .
@@ -246,6 +247,7 @@ class Dpp3Xmp
 			$this->getSaturation($saturation) .
 			$this->getSharpness($sharpness) .
 			$this->getCrop($cropped) .
+			$this->getRotation($tiffOrientation) .
 			$this->getPictureStyle($crsName, $crsConvertToGrayscale);
 
 	    if ($checkMark)
@@ -267,7 +269,7 @@ class Dpp3Xmp
 			</crs:Look>';
 		}
 
-		// TODO: checkmark, rating, rotation
+		// TODO: rotation
 
 		if (!$this->hasEdits)
 		{
@@ -289,7 +291,7 @@ class Dpp3Xmp
 			crs:LensProfileEnable="' . ($cropped ? 0 : 1) . '"
 			crs:ToneCurveName2012="Linear"
 			crs:HasSettings="True"
-			crs:AlreadyApplied="False">' . ($greyscaleXml ?? '') . ($checkMarkXml ?? '') . '
+			crs:AlreadyApplied="False">' . $toneCurvesXml . ($greyscaleXml ?? '') . ($checkMarkXml ?? '') . '
 		</rdf:Description>
 	</rdf:RDF>
 </x:xmpmeta>';
@@ -784,6 +786,99 @@ class Dpp3Xmp
 		}
 
 		return '';
+	}
+
+	protected function getRotation(&$tiffOrientation = null): string
+	{
+		$rotation = intval($this->exif->Rotation ?? 0);
+		$tiffOrientation = $this->getTiffOrientation($rotation);
+
+		if ($rotation != $this->getOrientationDegrees($this->exif->Orientation ?? 'Horizontal (normal)'))
+		{
+			$this->hasEdits = true;
+
+			return $this->getAttribute('tiff:Orientation', $tiffOrientation);
+		}
+
+		return '';
+	}
+
+	protected function getOrientationDegrees($orientationString): int
+	{
+		if ($orientationString == 'Horizontal (normal)')
+		{
+			return 0;
+		}
+
+		if (preg_match('/Rotate (\d+) CW/', $orientationString, $match))
+		{
+			return intval($match[1]);
+		}
+
+		return 0;
+	}
+
+	protected function getTiffOrientation($degrees): ?int
+	{
+		switch ($degrees)
+		{
+			case 0: return 1;
+			case 90: return 6;
+			case 180: return 3;
+			case 270: return 8;
+
+			// unknown degrees...
+			default: return null;
+		}
+	}
+
+	protected function getToneCurves(&$points = [])
+	{
+		$curves = [];
+		$xml = '';
+
+		if (isset($this->exif->ToneCurveActive) && $this->exif->ToneCurveActive === 'Yes')
+		{
+			$this->hasEdits = true;
+
+			foreach (['RGB', 'Red', 'Green', 'Blue'] AS $color)
+			{
+				$points = $this->getToneCurve($color);
+
+				if ($points)
+				{
+					$name = $color != 'RGB' ? $color : '';
+					$xml .= "
+				<crs:ToneCurvePV2012{$name}>
+					<rdf:Seq>";
+					foreach ($points as $point)
+					{
+						$xml .= "
+					<rdf:li>{$point[0]}, {$point[1]}</rdf:li>";
+					}
+
+					$xml .= "
+					</rdf:Seq>
+				</crs:ToneCurvePV2012{$name}>";
+				}
+			}
+		}
+
+		return $xml;
+	}
+
+	protected function getToneCurve($color)
+	{
+		$pointsProp = $color . 'CurvePoints';
+		$points = [];
+
+		preg_match_all('/\((\d+),(\d+)\)/', $this->exif->$pointsProp, $matches, PREG_SET_ORDER);
+		foreach ($matches as $match)
+		{
+			$points[] = [$match[1], $match[2]];
+		}
+
+		return $points;
 	}
 
 
