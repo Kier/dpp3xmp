@@ -235,6 +235,7 @@ class Dpp3Xmp
 		$WBAdjRGGBLevels = $this->exif->WBAdjRGGBLevels;
 		$WhiteBalanceAdj = $this->exif->WhiteBalanceAdj;
         $whiteBalance = $this->getWhiteBalance($kelvin);
+		$checkMark = $this->getCheckMark($checkMarkValue);
 		$attributes =
 			$this->getRating($rating) .
 			$this->getTemperature($kelvin) .
@@ -247,9 +248,15 @@ class Dpp3Xmp
 			$this->getCrop($cropped) .
 			$this->getPictureStyle($crsName, $crsConvertToGrayscale);
 
+	    if ($checkMark)
+	    {
+		    $checkMarkXml = '
+			<dc:subject><rdf:Bag><rdf:li>' . $checkMark . '</rdf:li></rdf:Bag></dc:subject>';
+	    }
+
 		if ($crsConvertToGrayscale == 'True')
 		{
-			$greyscale = '
+			$greyscaleXml = '
 			<crs:Look>
 				<rdf:Description crs:Name="' . $crsName . '">
 					<crs:Parameters>
@@ -273,7 +280,8 @@ class Dpp3Xmp
 		<rdf:Description rdf:about="" 
 			xmlns:xmp="http://ns.adobe.com/xap/1.0/"
 			xmlns:tiff="http://ns.adobe.com/tiff/1.0/"
-			xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"			
+			xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+			xmlns:dc="http://purl.org/dc/elements/1.1/"		
 			WBAdjRGGBLevels="' . $WBAdjRGGBLevels . '"			
 			crs:Version="15.3"
 			crs:ProcessVersion="11.0"
@@ -281,7 +289,7 @@ class Dpp3Xmp
 			crs:LensProfileEnable="' . ($cropped ? 0 : 1) . '"
 			crs:ToneCurveName2012="Linear"
 			crs:HasSettings="True"
-			crs:AlreadyApplied="False">' . ( $greyscale ?? '') . '
+			crs:AlreadyApplied="False">' . ($greyscaleXml ?? '') . ($checkMarkXml ?? '') . '
 		</rdf:Description>
 	</rdf:RDF>
 </x:xmpmeta>';
@@ -747,7 +755,7 @@ class Dpp3Xmp
 		];
 	}
 
-	protected function getRating(&$value = null)
+	protected function getRating(&$value = null): string
 	{
 		if (isset($this->exif->Rating) && $this->exif->Rating)
 		{
@@ -755,6 +763,24 @@ class Dpp3Xmp
 
 			$value = $this->exif->Rating;
 			return $this->getAttribute('xmp:Rating', $value);
+		}
+
+		return '';
+	}
+
+	protected function getCheckMark(&$value = null): string
+	{
+		if (isset($this->exif->CheckMark))
+		{
+			$check = $this->exif->CheckMark2 ?? $this->exif->CheckMark;
+
+			if ($check !== 'Clear')
+			{
+				$this->hasEdits = true;
+
+				$value = $check;
+				return "DPP3:CheckMark={$value}";
+			}
 		}
 
 		return '';
