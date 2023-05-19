@@ -236,7 +236,7 @@ class Dpp3Xmp
 		$WhiteBalanceAdj = $this->exif->WhiteBalanceAdj;
         $whiteBalance = $this->getWhiteBalance($kelvin);
 		$checkMark = $this->getCheckMark($checkMarkValue);
-		$toneCurvesXml = $this->getToneCurves($toneCurvePoints);
+		$toneCurves = $this->getToneCurves($toneCurvePoints);
 		$attributes =
 			$this->getRating($rating) .
 			$this->getTemperature($kelvin) .
@@ -250,32 +250,13 @@ class Dpp3Xmp
 			$this->getRotation($tiffOrientation) .
 			$this->getPictureStyle($crsName, $crsConvertToGrayscale);
 
-	    if ($checkMark)
-	    {
-		    $checkMarkXml = '
-			<dc:subject><rdf:Bag><rdf:li>' . $checkMark . '</rdf:li></rdf:Bag></dc:subject>';
-	    }
-
-		if ($crsConvertToGrayscale == 'True')
-		{
-			$greyscaleXml = '
-			<crs:Look>
-				<rdf:Description crs:Name="' . $crsName . '">
-					<crs:Parameters>
-						<rdf:Description crs:ConvertToGrayscale="' . $crsConvertToGrayscale . '">
-						</rdf:Description>
-					</crs:Parameters>				
-				</rdf:Description>
-			</crs:Look>';
-		}
-
-		// TODO: rotation
-
 		if (!$this->hasEdits)
 		{
 			// no exposure tweaks, no white balance adjustments - nothing to do
 			return null;
 		}
+
+		// TODO: write this XML using DOM
 
 		return '<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 7.0-c000 1.000000, 0000/00/00-00:00:00">
 	<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
@@ -289,14 +270,74 @@ class Dpp3Xmp
 			crs:ProcessVersion="11.0"
 			crs:WhiteBalance="' . $whiteBalance . '"' . $attributes . '
 			crs:LensProfileEnable="' . ($cropped ? 0 : 1) . '"
-			crs:ToneCurveName2012="Linear"
 			crs:HasSettings="True"
-			crs:AlreadyApplied="False">' . $toneCurvesXml . ($greyscaleXml ?? '') . ($checkMarkXml ?? '') . '
+			crs:AlreadyApplied="False">'
+			. $this->getToneCurvesXML($toneCurves)
+			. $this->getGreyscaleXML($crsConvertToGrayscale, $crsName)
+			. $this->getCheckMarkXML($checkMark) . '
 		</rdf:Description>
 	</rdf:RDF>
 </x:xmpmeta>';
 		
     }
+
+	protected function getGreyscaleXML($crsConvertToGrayscale, $crsName)
+	{
+		if ($crsConvertToGrayscale == 'True')
+		{
+			return '
+			<crs:Look>
+				<rdf:Description crs:Name="' . $crsName . '">
+					<crs:Parameters>
+						<rdf:Description crs:ConvertToGrayscale="' . $crsConvertToGrayscale . '">
+						</rdf:Description>
+					</crs:Parameters>				
+				</rdf:Description>
+			</crs:Look>';
+		}
+
+		return '';
+	}
+
+	protected function getCheckMarkXML($checkMark)
+	{
+		if ($checkMark)
+		{
+			return '
+			<dc:subject><rdf:Bag><rdf:li>' . $checkMark . '</rdf:li></rdf:Bag></dc:subject>';
+		}
+
+		return '';
+	}
+
+	protected function getToneCurvesXML(array $curves): string
+	{
+		$xml = '';
+
+		foreach ($curves AS $color => $points)
+		{
+			if ($points)
+			{
+				$name = ($color != 'RGB' ? $color : '');
+
+				$xml .= "
+				<crs:ToneCurvePV2012{$name}>
+					<rdf:Seq>";
+
+				foreach ($points as $point)
+				{
+					$xml .= "
+					<rdf:li>{$point[0]}, {$point[1]}</rdf:li>";
+				}
+
+				$xml .= "
+					</rdf:Seq>
+				</crs:ToneCurvePV2012{$name}>";
+			}
+		}
+
+		return $xml;
+	}
 
     public function getExif(SplFileInfo $file)
     {
@@ -832,10 +873,9 @@ class Dpp3Xmp
 		}
 	}
 
-	protected function getToneCurves(&$points = [])
+	protected function getToneCurves(&$points = []): array
 	{
 		$curves = [];
-		$xml = '';
 
 		if (isset($this->exif->ToneCurveActive) && $this->exif->ToneCurveActive === 'Yes')
 		{
@@ -843,31 +883,16 @@ class Dpp3Xmp
 
 			foreach (['RGB', 'Red', 'Green', 'Blue'] AS $color)
 			{
-				$points = $this->getToneCurve($color);
-
-				if ($points)
-				{
-					$name = $color != 'RGB' ? $color : '';
-					$xml .= "
-				<crs:ToneCurvePV2012{$name}>
-					<rdf:Seq>";
-					foreach ($points as $point)
-					{
-						$xml .= "
-					<rdf:li>{$point[0]}, {$point[1]}</rdf:li>";
-					}
-
-					$xml .= "
-					</rdf:Seq>
-				</crs:ToneCurvePV2012{$name}>";
-				}
+				$curves[$color] = $this->getToneCurvePoints($color);
 			}
 		}
 
-		return $xml;
+		$points = $curves;
+
+		return $curves;
 	}
 
-	protected function getToneCurve($color)
+	protected function getToneCurvePoints($color): array
 	{
 		$pointsProp = $color . 'CurvePoints';
 		$points = [];
