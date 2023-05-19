@@ -39,6 +39,8 @@ class Dpp3Xmp
 
 	protected $dir = null;
 
+	protected $hasEdits = false;
+
 	protected int $tempMin;
 	protected int $tempMax;
 	protected int $tempStep;
@@ -222,6 +224,7 @@ class Dpp3Xmp
     {
 		$this->file = $file;
         $this->exif = $this->getExif($file);
+		$this->hasEdits = false;
 
         if (!$this->hasRecipe($this->exif))
         {
@@ -233,6 +236,7 @@ class Dpp3Xmp
 		$WhiteBalanceAdj = $this->exif->WhiteBalanceAdj;
         $whiteBalance = $this->getWhiteBalance($kelvin);
 		$attributes =
+			$this->getRating($rating) .
 			$this->getTemperature($kelvin) .
 			$this->getExposure($exposure) .
 			$this->getContrast($contrast) .
@@ -243,23 +247,9 @@ class Dpp3Xmp
 			$this->getCrop($cropped) .
 			$this->getPictureStyle($crsName, $crsConvertToGrayscale);
 
-		if (!$kelvin && !$exposure)
+		if ($crsConvertToGrayscale == 'True')
 		{
-			// no exposure tweaks, no white balance adjustments - nothing to do
-			return null;
-		}
-
-		return '<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 7.0-c000 1.000000, 0000/00/00-00:00:00">
-	<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
-		<rdf:Description rdf:about="" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
-			WBAdjRGGBLevels="' . $WBAdjRGGBLevels . '"
-			crs:Version="15.3"
-			crs:ProcessVersion="11.0"
-			crs:WhiteBalance="' . $whiteBalance . '"' . $attributes . '
-			crs:LensProfileEnable="' . ($cropped ? 0 : 1) . '"
-			crs:ToneCurveName2012="Linear"
-			crs:HasSettings="True"
-			crs:AlreadyApplied="False">
+			$greyscale = '
 			<crs:Look>
 				<rdf:Description crs:Name="' . $crsName . '">
 					<crs:Parameters>
@@ -267,7 +257,31 @@ class Dpp3Xmp
 						</rdf:Description>
 					</crs:Parameters>				
 				</rdf:Description>
-			</crs:Look>
+			</crs:Look>';
+		}
+
+		// TODO: checkmark, rating, rotation
+
+		if (!$this->hasEdits)
+		{
+			// no exposure tweaks, no white balance adjustments - nothing to do
+			return null;
+		}
+
+		return '<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 7.0-c000 1.000000, 0000/00/00-00:00:00">
+	<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+		<rdf:Description rdf:about="" 
+			xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+			xmlns:tiff="http://ns.adobe.com/tiff/1.0/"
+			xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"			
+			WBAdjRGGBLevels="' . $WBAdjRGGBLevels . '"			
+			crs:Version="15.3"
+			crs:ProcessVersion="11.0"
+			crs:WhiteBalance="' . $whiteBalance . '"' . $attributes . '
+			crs:LensProfileEnable="' . ($cropped ? 0 : 1) . '"
+			crs:ToneCurveName2012="Linear"
+			crs:HasSettings="True"
+			crs:AlreadyApplied="False">' . ( $greyscale ?? '') . '
 		</rdf:Description>
 	</rdf:RDF>
 </x:xmpmeta>';
@@ -276,7 +290,9 @@ class Dpp3Xmp
 
     public function getExif(SplFileInfo $file)
     {
-        $json = `exiftool -j -SerialNumber -OwnerName -ExifImageHeight -ExifImageWidth -CanonModelID -CanonVRD:all "{$file->getPathName()}"`;
+		$args = '-SerialNumber -OwnerName -ExifImageHeight -ExifImageWidth -Rating -CanonModelID -CanonVRD:all';
+		$args = '-all -CanonVRD:all';
+        $json = `exiftool -j {$args} "{$file->getPathName()}"`;
         return json_decode($json)[0];
     }
 
@@ -459,14 +475,13 @@ class Dpp3Xmp
             case 'Fluorescent': // $kelvin = 4000;
             case 'Shade': // $kelvin = 7000;
             case 'Tungsten': // $kelvin = 3200;
+	        case 'Manual (Click)':
+	            $this->hasEdits = true;
                 $kelvin = $this->getClosestKelvin();
-                return $this->exif->WhiteBalanceAdj;
-
-            case 'Manual (Click)':
-                $kelvin = $this->getClosestKelvin();
-                return 'Custom';
+                return ($this->exif->WhiteBalanceAdj == 'Manual (Click)') ? 'Custom' : $this->exif->WhiteBalanceAdj;
 
             case 'Kelvin':
+	            $this->hasEdits = true;
                 $kelvin = $this->exif->WBAdjColorTemp;
                 return 'Custom';
 
@@ -504,6 +519,8 @@ class Dpp3Xmp
     {
         if (is_integer($value))
         {
+	        $this->hasEdits = true;
+
             return $this->getAttribute('crs:Temperature', $value) . $this->getAttribute('crs:Tint', 0);
         }
 
@@ -514,6 +531,8 @@ class Dpp3Xmp
     {
         if (isset($this->exif->RawBrightnessAdj))
         {
+	        $this->hasEdits = true;
+
             $value = $this->exif->RawBrightnessAdj + 0;
             $value = $this->addSymbol($value);
 
@@ -527,6 +546,8 @@ class Dpp3Xmp
     {
         if (isset($this->exif->CameraRawContrast))
         {
+	        $this->hasEdits = true;
+
             $value = $this->exif->CameraRawContrast + 0;
             $value = $this->addSymbol($value / 4 * 100);
 
@@ -540,6 +561,8 @@ class Dpp3Xmp
 	{
 		if (isset($this->exif->StandardRawHighlight) && $this->exif->StandardRawHighlight)
 		{
+			$this->hasEdits = true;
+
 			// XMP wants a value between -100 - 1000
 			$value = $this->exif->StandardRawHighlight * self::HIGHLIGHT_MULTIPLIER;
 
@@ -553,6 +576,8 @@ class Dpp3Xmp
 	{
 		if (isset($this->exif->StandardRawShadow) && $this->exif->StandardRawShadow)
 		{
+			$this->hasEdits = true;
+
 			// XMP wants a value between -100 - 1000
 			$value = $this->exif->StandardRawShadow * self::SHADOW_MULTIPLIER;
 
@@ -568,6 +593,8 @@ class Dpp3Xmp
 		{
 			case 'Monochrome':
 			{
+				$this->hasEdits = true;
+
 				$crsName = 'Adobe Monochrome';
 				$crsConvertToGrayscale = 'True';
 
@@ -601,6 +628,8 @@ class Dpp3Xmp
     {
         if (isset($this->exif->CameraRawSaturation))
         {
+	        $this->hasEdits = true;
+
             $value = $this->exif->CameraRawSaturation + 0;
             $value = $this->addSymbol($value / 4 * 100);
 
@@ -614,6 +643,8 @@ class Dpp3Xmp
     {
         if (isset($this->exif->CameraRawSharpness))
         {
+	        $this->hasEdits = true;
+
             // 0 -> 10 to 0 -> 150
             $value = $this->exif->CameraRawSharpness + 0;
             $value = $value / 10 * 150;
@@ -628,7 +659,9 @@ class Dpp3Xmp
 	{
 		if (isset($this->exif->CropActive) && $this->exif->CropActive === 'Yes')
 		{
+			$this->hasEdits = true;
 			$cropped = true;
+
 			$params = $this->getCropFromExif($this->exif, $pixelValues);
 			return $this->getAttributes($params);
 		}
@@ -712,6 +745,19 @@ class Dpp3Xmp
 			'crs:CropAngle' => -$angleDegrees,
 			'crs:HasCrop' => 'True'
 		];
+	}
+
+	protected function getRating(&$value = null)
+	{
+		if (isset($this->exif->Rating) && $this->exif->Rating)
+		{
+			$this->hasEdits = true;
+
+			$value = $this->exif->Rating;
+			return $this->getAttribute('xmp:Rating', $value);
+		}
+
+		return '';
 	}
 
 
