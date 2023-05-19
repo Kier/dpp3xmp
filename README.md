@@ -91,13 +91,22 @@ By default, this utility will create reference photos with color temperatures fr
 
 This utility currently handles the following adjustments from Digital Photo Professional 3 recipes:
 
-- Exposure
-- White balance / color temperature
-- Contrast
-- Saturation
-- Sharpness
+- RAW panel
+  - Exposure
+  - White balance / color temperature
+  - Contrast
+  - Saturation
+  - Sharpness
+  - Highlights
+  - Shadows
+- RGB panel
+  - Tone curve adjustment
+- Trimming / Angle Adjustment Panel
+  - Crop X, Y
+  - Crop Width, Height
+  - Angle
 
-Notable omissions at this point include the _tint_ aspect of white balance, highlight and shadow adjustments and cropping information. 
+Notable omissions at this point include the _tint_ aspect of white balance.
 
 
 ## Requirements
