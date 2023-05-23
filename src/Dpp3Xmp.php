@@ -4,7 +4,8 @@ class Dpp3Xmp
 {
 	const CREATE_FILES = true;
 
-	const REFERENCE_PATH = '/reference/';
+	// no trailing slash
+	const REFERENCE_PATH = '/reference';
 
 	/*
 	 * DPP stores highlight and shadow adjustments in a range -5 to +5
@@ -45,6 +46,8 @@ class Dpp3Xmp
 	protected int $tempMax;
 	protected int $tempStep;
 
+	protected string $fileIntroPrefix = '-';
+
     public function __construct($dir, int $tempStep = 50, int $tempMin = 2500, int $tempMax = 10000)
     {
 		$this->dir = $dir;
@@ -59,23 +62,40 @@ class Dpp3Xmp
 
 	public function convertDPPtoXMP($root): bool
 	{
-		if (empty($root) || !is_dir($root))
+		if (!$this->checkEnvironment($root, $error))
 		{
-			$this->write("Root folder {$root} not found.");
+			$this->write($error);
 			return false;
 		}
 
 		$di = new \RecursiveDirectoryIterator($root);
 		$iterator = new \RecursiveIteratorIterator($di, RecursiveIteratorIterator::SELF_FIRST);
+
+		$files = [];
+
 		$lastPath = '';
 
 		/** @var SplFileInfo $file */
 		foreach ($iterator AS $file)
 		{
-			if (!$file->isFile() || !in_array(strtoupper($file->getExtension()), self::$rawTypes))
+			if ($file->isFile() && in_array(strtoupper($file->getExtension()), self::$rawTypes))
 			{
-				continue;
+				$files[] = $file;
 			}
+		}
+
+		$start = 0;
+		$totalFiles = count($files);
+		$length = strlen(strval($totalFiles));
+
+		for ($i = $start; $i < $totalFiles; $i++)
+		{
+//			if (!$file->isFile() || !in_array(strtoupper($file->getExtension()), self::$rawTypes))
+//			{
+//				continue;
+//			}
+
+			$file = $files[$i];
 
 			$path = $file->getPathInfo();
 			if ($path != $lastPath)
@@ -84,6 +104,8 @@ class Dpp3Xmp
 				$this->write($path . '/');
 				$lastPath = $path;
 			}
+
+			$this->fileIntroPrefix = sprintf("%0{$length}d/%0{$length}d -", $i + 1, $totalFiles);
 
 			$this->writeFileIntro($file);
 
@@ -106,6 +128,20 @@ class Dpp3Xmp
 		$this->write('All done.');
 
 		return true;
+	}
+
+	public function checkEnvironment($rootFolder, &$error = '')
+	{
+		if (empty($root) || !is_dir($root))
+		{
+			$error = "Root folder {$root} not found.";
+			return false;
+		}
+
+		if (!is_dir($this->dir . self::REFERENCE_PATH))
+		{
+
+		}
 	}
 
 	public function buildReference(SplFileInfo $file, $exif = null, &$error = ''): ?string
@@ -134,7 +170,11 @@ class Dpp3Xmp
 
 		if (!is_dir($folder))
 		{
-			mkdir($folder);
+			if (!mkdir($folder, 0777, true))
+			{
+				$this->write("Failed to create {$folder}");
+				exit;
+			}
 		}
 
 		foreach (glob("{$folder}/*.{$extension}") AS $filename)
@@ -144,7 +184,7 @@ class Dpp3Xmp
 
 		$this->write("Generating reference photos...");
 
-		$tempFile = sys_get_temp_dir() . '/' . $this->getCameraId($exif) . '.' . $file->getExtension();
+		$tempFile = sys_get_temp_dir() . $this->getCameraId($exif) . '.' . $file->getExtension();
 		copy($file->getPathname(), $tempFile);
 
 		for ($temperature = $this->tempMin; $temperature <= $this->tempMax; $temperature += $this->tempStep)
@@ -927,7 +967,7 @@ class Dpp3Xmp
 
 	public function writeFileIntro(SplFileInfo $file): void
 	{
-		$this->write(sprintf('- %s -- ', $file->getFilename()), 0);
+		$this->write(sprintf('%s %s -- ', $this->fileIntroPrefix, $file->getFilename()), 0);
 	}
 
 	protected function progress($done, $total, $info = '', $width = 50, $off = '_', $on = '#'): string
