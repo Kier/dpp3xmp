@@ -816,7 +816,7 @@ class Dpp3Xmp
 	public function getCropFromExif($exif, &$pixelValues = []): array
 	{
 		return $this->getCropParameters(
-			$exif->AngleAdj,
+			$exif->AngleAdj ?? 0,
 			$exif->CropLeft, $exif->CropTop,
 			$exif->CropWidth, $exif->CropHeight,
 			$exif->ExifImageWidth, $exif->ExifImageHeight,
