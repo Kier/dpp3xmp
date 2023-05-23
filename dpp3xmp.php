@@ -23,7 +23,7 @@ if (is_file($path))
 	exit;
 }
 
-$converter->convertDPPtoXMP($path);
+$converter->convertDPPtoXMP($path, $argv);
 exit;
 
 // TODO: option to skip files that already have .xmp

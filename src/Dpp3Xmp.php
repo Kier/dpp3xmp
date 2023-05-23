@@ -60,7 +60,7 @@ class Dpp3Xmp
 		$this->write("Canon Digital Photo Professional 3.x recipe to XMP converter " . self::VERSION);
     }
 
-	public function convertDPPtoXMP($root): bool
+	public function convertDPPtoXMP($root, array $args): bool
 	{
 		if (!$this->checkEnvironment($root, $error))
 		{
@@ -68,40 +68,24 @@ class Dpp3Xmp
 			return false;
 		}
 
-		$di = new \RecursiveDirectoryIterator($root);
-		$iterator = new \RecursiveIteratorIterator($di, RecursiveIteratorIterator::SELF_FIRST);
+		$options = $this->getOptions($args);
 
-		$files = [];
+		$files = $this->scanDirectory($root);
 
-		$lastPath = '';
-
-		/** @var SplFileInfo $file */
-		foreach ($iterator AS $file)
-		{
-			if ($file->isFile() && in_array(strtoupper($file->getExtension()), self::$rawTypes))
-			{
-				$files[] = $file;
-			}
-		}
-
-		$start = 0;
+		$start = intval($options['start'] ?? 1) - 1;
 		$totalFiles = count($files);
 		$length = strlen(strval($totalFiles));
+		$lastPath = '';
 
 		for ($i = $start; $i < $totalFiles; $i++)
 		{
-//			if (!$file->isFile() || !in_array(strtoupper($file->getExtension()), self::$rawTypes))
-//			{
-//				continue;
-//			}
-
 			$file = $files[$i];
 
-			$path = $file->getPathInfo();
-			if ($path != $lastPath)
+			$path = $file->getPath();
+			if ($path !== $lastPath)
 			{
 				$this->write();
-				$this->write($path . '/');
+				$this->write($path . '/', 1, '');
 				$lastPath = $path;
 			}
 
@@ -130,18 +114,87 @@ class Dpp3Xmp
 		return true;
 	}
 
-	public function checkEnvironment($rootFolder, &$error = '')
+	/**
+	 * Recursively scans a directory, lists files before child directory contents
+	 *
+	 * @param $dir
+	 * @param $result
+	 * @return array|mixed
+	 */
+	protected function scanDirectory($dir, &$result = [])
 	{
-		if (empty($root) || !is_dir($root))
+		$directories = [];
+
+		if (substr($dir, -1) == '/')
 		{
-			$error = "Root folder {$root} not found.";
+			$dir = substr($dir, 0, -1);
+		}
+
+		foreach (scandir($dir) AS $item)
+		{
+			if ($item[0] === '.')
+			{
+				continue;
+			}
+
+			$path = $dir . '/' . $item;
+
+			if (is_file($path))
+			{
+				$file = new SplFileInfo($path);
+				if (in_array(strtoupper($file->getExtension()), self::$rawTypes))
+				{
+					$result[] = $file;
+				}
+			}
+			else
+			{
+				$directories[] = $path;
+			}
+		}
+
+		foreach ($directories AS $dir)
+		{
+			$this->scanDirectory($dir, $result);
+		}
+
+		return $result;
+	}
+
+	public function checkEnvironment($rootFolder, &$error = ''): bool
+	{
+		if (empty($rootFolder) || !is_dir($rootFolder))
+		{
+			$error = "Root folder {$rootFolder} not found.";
 			return false;
 		}
 
-		if (!is_dir($this->dir . self::REFERENCE_PATH))
+		$ref = $this->dir . self::REFERENCE_PATH;
+		if (!is_dir($ref))
 		{
-
+			if (!mkdir($ref))
+			{
+				$error = "Unable to read or create reference path: " . $ref;
+				return false;
+			}
 		}
+
+		return true;
+	}
+
+	protected function getOptions(array $argv): array
+	{
+		$options = [];
+
+		foreach (array_slice($argv, 2) as $arg)
+		{
+			if (preg_match('/--(\w+)=(.+)$/si', $arg, $match))
+			{
+				$options[$match[1]] = $match[2];
+			}
+		}
+
+		return $options;
 	}
 
 	public function buildReference(SplFileInfo $file, $exif = null, &$error = ''): ?string
